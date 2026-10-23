@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -10,6 +11,11 @@ import {
   ValidatorConstraint,
 } from 'class-validator';
 import type { ValidationArguments, ValidatorConstraintInterface } from 'class-validator';
+import { PLAYER_SORT_FIELDS } from '../../application/use-cases/list-players.use-case.js';
+import type {
+  PlayerSortField,
+  PlayerSortOrder,
+} from '../../application/use-cases/list-players.use-case.js';
 
 /**
  * Indique si deux bornes forment un intervalle inversé.
@@ -53,9 +59,9 @@ class IsAgeRangeOrderedConstraint implements ValidatorConstraintInterface {
 }
 
 /**
- * Critères de recherche de `GET /players`.
+ * Critères de recherche et de tri de `GET /players`.
  * Tous les paramètres sont facultatifs et cumulables : un paramètre absent
- * n'applique aucune restriction.
+ * n'applique aucune restriction. Les filtres sont appliqués avant le tri.
  */
 export class ListPlayersQueryDto {
   @ApiPropertyOptional({
@@ -99,4 +105,26 @@ export class ListPlayersQueryDto {
   @Min(1, { message: 'maxAge doit être supérieur ou égal à 1.' })
   @Validate(IsAgeRangeOrderedConstraint)
   maxAge?: number;
+
+  @ApiPropertyOptional({
+    description: `Champ de tri. Valeurs autorisées : ${PLAYER_SORT_FIELDS.join(', ')}.`,
+    enum: [...PLAYER_SORT_FIELDS],
+    example: 'points',
+    default: 'rank',
+  })
+  @IsOptional()
+  @IsIn([...PLAYER_SORT_FIELDS], {
+    message: `sortBy doit valoir ${PLAYER_SORT_FIELDS.join(', ')}.`,
+  })
+  sortBy?: PlayerSortField;
+
+  @ApiPropertyOptional({
+    description: 'Sens du tri. Valeurs autorisées : asc, desc.',
+    enum: ['asc', 'desc'],
+    example: 'desc',
+    default: 'asc',
+  })
+  @IsOptional()
+  @IsIn(['asc', 'desc'], { message: 'order doit valoir asc ou desc.' })
+  order?: PlayerSortOrder;
 }

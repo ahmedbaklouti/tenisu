@@ -42,13 +42,15 @@ export class PlayersController {
 
   @Get()
   @ApiOperation({
-    summary: 'Lister ou rechercher des joueurs',
+    summary: 'Lister, rechercher et trier des joueurs',
     description:
-      'Joueurs triés par rang croissant, puis par identifiant croissant en cas de rang identique. ' +
       'Les filtres sont facultatifs et cumulables (logique ET) : `country` (insensible à la casse), ' +
       '`minRank`/`maxRank` et `minAge`/`maxAge`, bornes incluses. ' +
+      'Le tri est configurable via `sortBy` (`rank`, `points`, `age`, `height`, défaut `rank`) et ' +
+      '`order` (`asc`, défaut, ou `desc`). Les filtres sont appliqués avant le tri, et les égalités ' +
+      'sont départagées par rang croissant puis identifiant croissant. ' +
       'Une recherche sans résultat renvoie `200` avec un tableau vide. ' +
-      'Exemple : `GET /players?country=USA&minRank=1&maxRank=10`.',
+      'Exemple : `GET /players?country=SRB&minRank=1&maxRank=10&sortBy=points&order=desc`.',
   })
   @ApiOkResponse({
     description: 'Liste des joueurs correspondant aux filtres (vide si aucun résultat).',
@@ -56,7 +58,8 @@ export class PlayersController {
   })
   @ApiBadRequestResponse({
     description:
-      'Paramètre de requête invalide, inconnu, ou intervalle incohérent (`minRank` > `maxRank`, `minAge` > `maxAge`).',
+      'Paramètre de requête invalide ou inconnu, intervalle incohérent (`minRank` > `maxRank`, ' +
+      '`minAge` > `maxAge`) ou valeur de tri hors liste blanche (`sortBy`, `order`).',
   })
   findAll(@Query() query: ListPlayersQueryDto): Promise<PlayerResponseDto[]> {
     return this.listPlayersUseCase.execute(query);

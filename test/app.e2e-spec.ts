@@ -212,14 +212,22 @@ describe('Tenisu API (e2e)', () => {
         ]),
       );
 
-      // Les cinq filtres de recherche sont documentés comme paramètres de requête.
+      // Les cinq filtres de recherche et les deux paramètres de tri sont documentés.
       const searchParameters = response.body.paths['/players'].get.parameters as {
         name: string;
         required: boolean;
       }[];
 
       expect(searchParameters.map((parameter) => parameter.name)).toStrictEqual(
-        expect.arrayContaining(['country', 'minRank', 'maxRank', 'minAge', 'maxAge']),
+        expect.arrayContaining([
+          'country',
+          'minRank',
+          'maxRank',
+          'minAge',
+          'maxAge',
+          'sortBy',
+          'order',
+        ]),
       );
       expect(searchParameters.every((parameter) => parameter.required === false)).toBe(true);
     });
@@ -364,6 +372,123 @@ describe('Tenisu API (e2e)', () => {
     it('n’impose aucune borne maximale arbitraire', async () => {
       expect(await listIds({ minRank: 100000 })).toStrictEqual([]);
       expect(await listIds({ maxRank: 100000, maxAge: 100 })).toStrictEqual([17, 52, 102, 65, 95]);
+    });
+
+    it('reste compatible avec les autres endpoints', async () => {
+      await request(app.getHttpServer()).get('/players/52').expect(HttpStatus.OK);
+      await request(app.getHttpServer()).get('/players/52/statistics').expect(HttpStatus.OK);
+      await request(app.getHttpServer()).get('/statistics').expect(HttpStatus.OK);
+      await request(app.getHttpServer()).get('/health').expect(HttpStatus.OK);
+    });
+  });
+
+  describe('tri configurable sur les joueurs', () => {
+    let app: INestApplication;
+
+    beforeAll(async () => {
+      app = await createApplication();
+    });
+
+    afterAll(async () => {
+      await app.close();
+    });
+
+    /**
+     * Dataset initial, avec les valeurs triables de chaque joueur :
+     *
+     * | id  | pays | rang | points | taille | âge |
+     * | --- | ---- | ---- | ------ | ------ | --- |
+     * | 17  | ESP  | 1    | 1982   | 185    | 33  |
+     * | 52  | SRB  | 2    | 2542   | 188    | 31  |
+     * | 102 | USA  | 10   | 3521   | 175    | 37  |
+     * | 65  | SUI  | 21   | 1784   | 183    | 33  |
+     * | 95  | USA  | 52   | 1105   | 185    | 38  |
+     */
+    async function listIds(query: Record<string, unknown> = {}): Promise<number[]> {
+      const response = await request(app.getHttpServer())
+        .get('/players')
+        .query(query)
+        .expect(HttpStatus.OK);
+
+      return (response.body as { id: number }[]).map((player) => player.id);
+    }
+
+    /** Vérifie un `400` et retourne le message d'erreur normalisé. */
+    async function expectBadRequest(query: Record<string, unknown>): Promise<string> {
+      const response = await request(app.getHttpServer())
+        .get('/players')
+        .query(query)
+        .expect(HttpStatus.BAD_REQUEST);
+
+      return normalizeMessage(response.body);
+    }
+
+    it('sans paramètre de tri, conserve le rang croissant par défaut', async () => {
+      expect(await listIds()).toStrictEqual([17, 52, 102, 65, 95]);
+    });
+
+    it.each([
+      ['rank', 'asc', [17, 52, 102, 65, 95]],
+      ['rank', 'desc', [95, 65, 102, 52, 17]],
+      ['points', 'asc', [95, 65, 17, 52, 102]],
+      ['points', 'desc', [102, 52, 17, 65, 95]],
+      ['age', 'asc', [52, 17, 65, 102, 95]],
+      ['age', 'desc', [95, 102, 17, 65, 52]],
+      ['height', 'asc', [102, 65, 17, 95, 52]],
+      ['height', 'desc', [52, 17, 95, 65, 102]],
+    ])('trie par %s en ordre %s', async (sortBy, order, expected) => {
+      expect(await listIds({ sortBy, order })).toStrictEqual(expected);
+    });
+
+    it('départage une égalité par rang croissant puis identifiant croissant', async () => {
+      // `17` et `65` partagent l'âge 33 : le rang (1 < 21) les départage.
+      expect(await listIds({ sortBy: 'age', order: 'asc' })).toStrictEqual([52, 17, 65, 102, 95]);
+      // `17` et `95` partagent la taille 185 : le rang (1 < 52) les départage.
+      expect(await listIds({ sortBy: 'height', order: 'asc' })).toStrictEqual([
+        102, 65, 17, 95, 52,
+      ]);
+    });
+
+    it('utilise l’ordre croissant lorsque `order` est absent', async () => {
+      expect(await listIds({ sortBy: 'points' })).toStrictEqual([95, 65, 17, 52, 102]);
+      expect(await listIds({ sortBy: 'height' })).toStrictEqual([102, 65, 17, 95, 52]);
+    });
+
+    it('utilise le rang lorsque `sortBy` est absent', async () => {
+      expect(await listIds({ order: 'desc' })).toStrictEqual([95, 65, 102, 52, 17]);
+    });
+
+    it('applique le tri aux résultats filtrés', async () => {
+      expect(await listIds({ country: 'USA', sortBy: 'points', order: 'desc' })).toStrictEqual([
+        102, 95,
+      ]);
+      expect(await listIds({ minRank: 10, sortBy: 'points' })).toStrictEqual([95, 65, 102]);
+      expect(
+        await listIds({ country: 'SRB', minRank: 1, maxRank: 10, sortBy: 'points', order: 'desc' }),
+      ).toStrictEqual([52]);
+    });
+
+    it('retourne un tableau vide même lorsqu’un tri est demandé', async () => {
+      expect(await listIds({ country: 'ZZZ', sortBy: 'points', order: 'desc' })).toStrictEqual([]);
+    });
+
+    it('ne fausse pas l’ordre par défaut après un tri différent', async () => {
+      expect(await listIds({ sortBy: 'points', order: 'desc' })).toStrictEqual([
+        102, 52, 17, 65, 95,
+      ]);
+      expect(await listIds()).toStrictEqual([17, 52, 102, 65, 95]);
+    });
+
+    it.each(['foo', 'RANK', 'score', ''])('rejette sortBy=%s avec 400', async (invalidSortBy) => {
+      const message = await expectBadRequest({ sortBy: invalidSortBy });
+
+      expect(message).toContain('sortBy doit valoir rank, points, age, height.');
+    });
+
+    it.each(['up', 'DESC', 'ascending', ''])('rejette order=%s avec 400', async (invalidOrder) => {
+      const message = await expectBadRequest({ order: invalidOrder });
+
+      expect(message).toContain('order doit valoir asc ou desc.');
     });
 
     it('reste compatible avec les autres endpoints', async () => {

@@ -3,6 +3,26 @@ import type { Player } from '../../domain/entities/player.entity.js';
 import { PLAYER_REPOSITORY } from '../../domain/repositories/player.repository.js';
 import type { PlayerRepository } from '../../domain/repositories/player.repository.js';
 
+/** Champs sur lesquels le tri de la liste est autorisé. */
+export const PLAYER_SORT_FIELDS = ['rank', 'points', 'age', 'height'] as const;
+
+/** Champ de tri autorisé. */
+export type PlayerSortField = (typeof PLAYER_SORT_FIELDS)[number];
+
+/** Sens du tri. */
+export type PlayerSortOrder = 'asc' | 'desc';
+
+const DEFAULT_SORT_FIELD: PlayerSortField = 'rank';
+const DEFAULT_SORT_ORDER: PlayerSortOrder = 'asc';
+
+/** Valeur numérique comparée pour chaque champ de tri. */
+const SORT_VALUE_SELECTORS: Record<PlayerSortField, (player: Player) => number> = {
+  rank: (player) => player.data.rank,
+  points: (player) => player.data.points,
+  age: (player) => player.data.age,
+  height: (player) => player.data.height,
+};
+
 /**
  * Critères de recherche de la liste des joueurs.
  * Chaque critère est facultatif : un critère absent n'applique aucune restriction.
@@ -19,12 +39,17 @@ export interface PlayerSearchCriteria {
   minAge?: number | undefined;
   /** Âge maximum accepté (borne incluse). */
   maxAge?: number | undefined;
+  /** Champ de tri ; `rank` par défaut. */
+  sortBy?: PlayerSortField | undefined;
+  /** Sens du tri ; `asc` par défaut. */
+  order?: PlayerSortOrder | undefined;
 }
 
 /**
- * Liste les joueurs, du meilleur au moins bon : rang croissant, puis identifiant
- * croissant pour départager les rangs égaux. Les critères fournis sont combinés
- * avec une logique ET ; sans critère, tous les joueurs sont retournés.
+ * Liste les joueurs correspondant aux critères, filtrés puis triés.
+ * Par défaut, du meilleur au moins bon : rang croissant. Le tri est déterminé
+ * par `sortBy`/`order` ; les critères de filtrage fournis sont combinés avec une
+ * logique ET et, sans critère, tous les joueurs sont retournés.
  */
 @Injectable()
 export class ListPlayersUseCase {
@@ -36,8 +61,10 @@ export class ListPlayersUseCase {
   async execute(criteria: PlayerSearchCriteria = {}): Promise<Player[]> {
     const players = await this.playerRepository.findAll();
 
-    // Filtrage et tri s'appliquent à une copie : l'ordre interne du repository reste intact.
-    return players.filter((player) => matchesCriteria(player, criteria)).sort(compareByRankThenId);
+    // Filtrage puis tri s'appliquent à une copie : l'ordre interne du repository reste intact.
+    return players
+      .filter((player) => matchesCriteria(player, criteria))
+      .sort(buildComparator(criteria));
   }
 }
 
@@ -66,4 +93,31 @@ function matchesCriteria(player: Player, criteria: PlayerSearchCriteria): boolea
 
 function compareByRankThenId(first: Player, second: Player): number {
   return first.data.rank - second.data.rank || first.id - second.id;
+}
+
+/**
+ * Construit le comparateur : champ demandé (`rank` par défaut) dans le sens
+ * demandé (`asc` par défaut). En cas d'égalité, le rang croissant puis
+ * l'identifiant croissant garantissent un ordre déterministe ; lorsque le champ
+ * trié est déjà le rang, l'identifiant suffit.
+ */
+function buildComparator(
+  criteria: PlayerSearchCriteria,
+): (first: Player, second: Player) => number {
+  const sortBy = criteria.sortBy ?? DEFAULT_SORT_FIELD;
+  const direction = (criteria.order ?? DEFAULT_SORT_ORDER) === 'desc' ? -1 : 1;
+  const selectValue = SORT_VALUE_SELECTORS[sortBy];
+
+  return (first, second) => {
+    const bySortField = (selectValue(first) - selectValue(second)) * direction;
+
+    if (bySortField !== 0) {
+      return bySortField;
+    }
+    if (sortBy === 'rank') {
+      return first.id - second.id;
+    }
+
+    return compareByRankThenId(first, second);
+  };
 }

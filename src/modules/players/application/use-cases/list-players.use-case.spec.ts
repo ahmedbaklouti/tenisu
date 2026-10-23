@@ -144,4 +144,112 @@ describe('ListPlayersUseCase', () => {
       expect(await listIds({ country: 'ESP', minRank: 100 })).toEqual([]);
     });
   });
+
+  describe('tri configurable', () => {
+    /**
+     * Jeu de données dédié au tri, avec égalités volontaires sur chaque champ :
+     * rangs 1 (10 et 40), points 300 (10 et 30), âges 30 (10 et 20),
+     * tailles 180 (10 et 30).
+     *
+     * | id | pays | rang | points | âge | taille |
+     * | -- | ---- | ---- | ------ | --- | ------ |
+     * | 10 | ESP  | 1    | 300    | 30  | 180    |
+     * | 40 | USA  | 1    | 200    | 50  | 170    |
+     * | 20 | USA  | 2    | 100    | 30  | 190    |
+     * | 30 | SRB  | 3    | 300    | 40  | 180    |
+     */
+    function buildSortRepository(): InMemoryPlayerRepository {
+      return new InMemoryPlayerRepository([
+        buildPlayer({
+          id: 30,
+          country: { code: 'SRB' },
+          data: { rank: 3, points: 300, age: 40, height: 180 },
+        }),
+        buildPlayer({
+          id: 10,
+          country: { code: 'ESP' },
+          data: { rank: 1, points: 300, age: 30, height: 180 },
+        }),
+        buildPlayer({
+          id: 20,
+          country: { code: 'USA' },
+          data: { rank: 2, points: 100, age: 30, height: 190 },
+        }),
+        buildPlayer({
+          id: 40,
+          country: { code: 'USA' },
+          data: { rank: 1, points: 200, age: 50, height: 170 },
+        }),
+      ]);
+    }
+
+    /** Exécute le cas d'usage sur le jeu de données de tri et retourne les identifiants. */
+    async function sortedIds(criteria: PlayerSearchCriteria = {}): Promise<number[]> {
+      const players = await new ListPlayersUseCase(buildSortRepository()).execute(criteria);
+
+      return players.map((player) => player.id);
+    }
+
+    it('sans paramètre de tri, conserve le rang croissant', async () => {
+      expect(await sortedIds()).toEqual([10, 40, 20, 30]);
+    });
+
+    it('trie par rang croissant ou décroissant', async () => {
+      expect(await sortedIds({ sortBy: 'rank', order: 'asc' })).toEqual([10, 40, 20, 30]);
+      expect(await sortedIds({ sortBy: 'rank', order: 'desc' })).toEqual([30, 20, 10, 40]);
+    });
+
+    it('trie par points croissant ou décroissant', async () => {
+      expect(await sortedIds({ sortBy: 'points', order: 'asc' })).toEqual([20, 40, 10, 30]);
+      expect(await sortedIds({ sortBy: 'points', order: 'desc' })).toEqual([10, 30, 40, 20]);
+    });
+
+    it('trie par âge croissant ou décroissant', async () => {
+      expect(await sortedIds({ sortBy: 'age', order: 'asc' })).toEqual([10, 20, 30, 40]);
+      expect(await sortedIds({ sortBy: 'age', order: 'desc' })).toEqual([40, 30, 10, 20]);
+    });
+
+    it('trie par taille croissante ou décroissante', async () => {
+      expect(await sortedIds({ sortBy: 'height', order: 'asc' })).toEqual([40, 10, 30, 20]);
+      expect(await sortedIds({ sortBy: 'height', order: 'desc' })).toEqual([20, 10, 30, 40]);
+    });
+
+    it('départage les égalités par rang croissant puis identifiant croissant', async () => {
+      // Points 300 pour les identifiants 10 (rang 1) et 30 (rang 3).
+      expect(await sortedIds({ sortBy: 'points', order: 'desc' })).toEqual([10, 30, 40, 20]);
+      // Rangs 1 pour les identifiants 10 et 40 : départage par identifiant.
+      expect(await sortedIds({ sortBy: 'rank', order: 'desc' })).toEqual([30, 20, 10, 40]);
+    });
+
+    it('utilise `asc` par défaut lorsque seul `sortBy` est fourni', async () => {
+      expect(await sortedIds({ sortBy: 'points' })).toEqual([20, 40, 10, 30]);
+      expect(await sortedIds({ sortBy: 'age' })).toEqual([10, 20, 30, 40]);
+    });
+
+    it('utilise `rank` par défaut lorsque seul `order` est fourni', async () => {
+      expect(await sortedIds({ order: 'asc' })).toEqual([10, 40, 20, 30]);
+      expect(await sortedIds({ order: 'desc' })).toEqual([30, 20, 10, 40]);
+    });
+
+    it('applique le tri après les filtres existants', async () => {
+      expect(await sortedIds({ minRank: 2, sortBy: 'points', order: 'desc' })).toEqual([30, 20]);
+      expect(await sortedIds({ country: 'USA', sortBy: 'age' })).toEqual([20, 40]);
+      expect(await sortedIds({ country: 'USA', sortBy: 'height', order: 'desc' })).toEqual([
+        20, 40,
+      ]);
+    });
+
+    it('retourne une liste vide lorsqu’aucun joueur ne correspond', async () => {
+      expect(await sortedIds({ minRank: 100, sortBy: 'points', order: 'desc' })).toEqual([]);
+    });
+
+    it('ne modifie pas l’ordre interne du repository', async () => {
+      const repository = buildSortRepository();
+
+      await new ListPlayersUseCase(repository).execute({ sortBy: 'points', order: 'desc' });
+
+      const stored = await repository.findAll();
+      expect(stored.map((player) => player.id)).toEqual([30, 10, 20, 40]);
+    });
+  });
 });
