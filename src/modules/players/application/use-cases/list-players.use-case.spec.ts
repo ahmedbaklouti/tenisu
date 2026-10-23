@@ -1,6 +1,34 @@
 import { InMemoryPlayerRepository } from '../../infrastructure/persistence/in-memory-player.repository.js';
 import { buildPlayer } from '../../testing/player.fixture.js';
 import { ListPlayersUseCase } from './list-players.use-case.js';
+import type { PlayerSearchCriteria } from './list-players.use-case.js';
+
+/**
+ * Jeu de données de test, jamais partagé entre les tests : chaque appel
+ * reconstruit un repository neuf à partir de ces joueurs.
+ *
+ * | id | pays | rang | âge |
+ * | -- | ---- | ---- | --- |
+ * | 1  | SRB  | 1    | 31  |
+ * | 2  | USA  | 10   | 38  |
+ * | 3  | ESP  | 21   | 33  |
+ * | 4  | USA  | 52   | 37  |
+ */
+function buildRepository(): InMemoryPlayerRepository {
+  return new InMemoryPlayerRepository([
+    buildPlayer({ id: 1, country: { code: 'SRB' }, data: { rank: 1, age: 31 } }),
+    buildPlayer({ id: 2, country: { code: 'USA' }, data: { rank: 10, age: 38 } }),
+    buildPlayer({ id: 3, country: { code: 'ESP' }, data: { rank: 21, age: 33 } }),
+    buildPlayer({ id: 4, country: { code: 'USA' }, data: { rank: 52, age: 37 } }),
+  ]);
+}
+
+/** Exécute le cas d'usage sur un repository neuf et retourne les identifiants. */
+async function listIds(criteria: PlayerSearchCriteria = {}): Promise<number[]> {
+  const players = await new ListPlayersUseCase(buildRepository()).execute(criteria);
+
+  return players.map((player) => player.id);
+}
 
 describe('ListPlayersUseCase', () => {
   it('trie les joueurs par rang croissant', async () => {
@@ -38,5 +66,82 @@ describe('ListPlayersUseCase', () => {
 
     expect(sorted.map((player) => player.id)).toEqual([10, 20, 30]);
     expect(stored.map((player) => player.id)).toEqual([30, 20, 10]);
+  });
+
+  describe('sans critère', () => {
+    it('retourne tous les joueurs triés par rang croissant', async () => {
+      expect(await listIds()).toEqual([1, 2, 3, 4]);
+    });
+  });
+
+  describe('filtre par pays', () => {
+    it('ne retient que les joueurs du pays demandé', async () => {
+      expect(await listIds({ country: 'USA' })).toEqual([2, 4]);
+    });
+
+    it('compare le code pays sans tenir compte de la casse', async () => {
+      expect(await listIds({ country: 'srb' })).toEqual([1]);
+      expect(await listIds({ country: 'EsP' })).toEqual([3]);
+    });
+
+    it('retourne une liste vide lorsque aucun pays ne correspond', async () => {
+      expect(await listIds({ country: 'ZZZ' })).toEqual([]);
+    });
+  });
+
+  describe('filtre par rang', () => {
+    it('applique un rang minimum (borne incluse)', async () => {
+      expect(await listIds({ minRank: 10 })).toEqual([2, 3, 4]);
+    });
+
+    it('applique un rang maximum (borne incluse)', async () => {
+      expect(await listIds({ maxRank: 21 })).toEqual([1, 2, 3]);
+    });
+
+    it('applique un intervalle de rang', async () => {
+      expect(await listIds({ minRank: 10, maxRank: 21 })).toEqual([2, 3]);
+    });
+
+    it('accepte un intervalle réduit à une seule valeur', async () => {
+      expect(await listIds({ minRank: 21, maxRank: 21 })).toEqual([3]);
+    });
+
+    it('retourne une liste vide lorsqu’aucun rang ne correspond', async () => {
+      expect(await listIds({ minRank: 100 })).toEqual([]);
+    });
+  });
+
+  describe('filtre par âge', () => {
+    it('applique un âge minimum (borne incluse)', async () => {
+      expect(await listIds({ minAge: 33 })).toEqual([2, 3, 4]);
+    });
+
+    it('applique un âge maximum (borne incluse)', async () => {
+      expect(await listIds({ maxAge: 33 })).toEqual([1, 3]);
+    });
+
+    it('applique un intervalle d’âge', async () => {
+      expect(await listIds({ minAge: 33, maxAge: 37 })).toEqual([3, 4]);
+    });
+  });
+
+  describe('combinaison de critères', () => {
+    it('combine le pays, le rang et l’âge avec une logique ET', async () => {
+      expect(await listIds({ country: 'USA', minRank: 10, maxAge: 38 })).toEqual([2, 4]);
+      expect(await listIds({ country: 'USA', minRank: 20 })).toEqual([4]);
+      expect(await listIds({ country: 'USA', minRank: 10, minAge: 38 })).toEqual([2]);
+    });
+
+    it('conserve le tri par rang croissant après filtrage', async () => {
+      const players = await new ListPlayersUseCase(buildRepository()).execute({ maxRank: 52 });
+      const ranks = players.map((player) => player.data.rank);
+
+      expect(ranks).toEqual([...ranks].sort((first, second) => first - second));
+      expect(players.map((player) => player.id)).toEqual([1, 2, 3, 4]);
+    });
+
+    it('retourne une liste vide sans correspondance', async () => {
+      expect(await listIds({ country: 'ESP', minRank: 100 })).toEqual([]);
+    });
   });
 });

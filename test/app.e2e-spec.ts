@@ -5,11 +5,29 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
 import { setupApplication } from '../src/app.setup.js';
 
+/** Charge utile de création de joueur, telle qu'envoyée à `POST /players`. */
+interface PlayerPayload {
+  firstname: string;
+  lastname: string;
+  shortname: string;
+  sex: string;
+  country: { picture: string; code: string };
+  picture: string;
+  data: {
+    rank: number;
+    points: number;
+    weight: number;
+    height: number;
+    age: number;
+    last: number[];
+  };
+}
+
 /**
  * Charge utile valide réutilisée par les scénarios de création.
  * Construite à chaque appel afin qu'aucun test ne partage d'objet mutable.
  */
-function buildValidPlayerPayload(): Record<string, unknown> {
+function buildValidPlayerPayload(): PlayerPayload {
   return {
     firstname: 'Roger',
     lastname: 'Federer',
@@ -193,6 +211,166 @@ describe('Tenisu API (e2e)', () => {
           '/health',
         ]),
       );
+
+      // Les cinq filtres de recherche sont documentés comme paramètres de requête.
+      const searchParameters = response.body.paths['/players'].get.parameters as {
+        name: string;
+        required: boolean;
+      }[];
+
+      expect(searchParameters.map((parameter) => parameter.name)).toStrictEqual(
+        expect.arrayContaining(['country', 'minRank', 'maxRank', 'minAge', 'maxAge']),
+      );
+      expect(searchParameters.every((parameter) => parameter.required === false)).toBe(true);
+    });
+  });
+
+  describe('recherche et filtres sur les joueurs', () => {
+    let app: INestApplication;
+
+    beforeAll(async () => {
+      app = await createApplication();
+    });
+
+    afterAll(async () => {
+      await app.close();
+    });
+
+    /**
+     * Dataset initial, trié par rang croissant :
+     * `17` ESP rang 1 âge 33, `52` SRB rang 2 âge 31, `102` USA rang 10 âge 37,
+     * `65` SUI rang 21 âge 33, `95` USA rang 52 âge 38.
+     */
+    async function listIds(query: Record<string, unknown> = {}): Promise<number[]> {
+      const response = await request(app.getHttpServer())
+        .get('/players')
+        .query(query)
+        .expect(HttpStatus.OK);
+
+      return (response.body as { id: number }[]).map((player) => player.id);
+    }
+
+    /** Vérifie un `400` et retourne le message d'erreur normalisé. */
+    async function expectBadRequest(query: Record<string, unknown>): Promise<string> {
+      const response = await request(app.getHttpServer())
+        .get('/players')
+        .query(query)
+        .expect(HttpStatus.BAD_REQUEST);
+
+      return normalizeMessage(response.body);
+    }
+
+    it('sans paramètre, retourne tous les joueurs triés par rang croissant', async () => {
+      expect(await listIds()).toStrictEqual([17, 52, 102, 65, 95]);
+    });
+
+    it('filtre par pays', async () => {
+      expect(await listIds({ country: 'USA' })).toStrictEqual([102, 95]);
+    });
+
+    it('filtre par pays sans tenir compte de la casse', async () => {
+      expect(await listIds({ country: 'srb' })).toStrictEqual([52]);
+      expect(await listIds({ country: 'uSa' })).toStrictEqual([102, 95]);
+    });
+
+    it('filtre par rang minimum, borne incluse', async () => {
+      expect(await listIds({ minRank: 10 })).toStrictEqual([102, 65, 95]);
+    });
+
+    it('filtre par rang maximum, borne incluse', async () => {
+      expect(await listIds({ maxRank: 10 })).toStrictEqual([17, 52, 102]);
+    });
+
+    it('filtre par intervalle de rang', async () => {
+      expect(await listIds({ minRank: 1, maxRank: 10 })).toStrictEqual([17, 52, 102]);
+      expect(await listIds({ minRank: 10, maxRank: 52 })).toStrictEqual([102, 65, 95]);
+    });
+
+    it('filtre par âge minimum, borne incluse', async () => {
+      expect(await listIds({ minAge: 35 })).toStrictEqual([102, 95]);
+    });
+
+    it('filtre par âge maximum, borne incluse', async () => {
+      expect(await listIds({ maxAge: 33 })).toStrictEqual([17, 52, 65]);
+    });
+
+    it('filtre par intervalle d’âge', async () => {
+      expect(await listIds({ minAge: 33, maxAge: 37 })).toStrictEqual([17, 102, 65]);
+    });
+
+    it('combine le pays, le rang et l’âge avec une logique ET', async () => {
+      expect(await listIds({ country: 'SRB', minRank: 1, maxRank: 10 })).toStrictEqual([52]);
+      expect(await listIds({ country: 'USA', minAge: 35 })).toStrictEqual([102, 95]);
+      expect(await listIds({ country: 'USA', minRank: 20 })).toStrictEqual([95]);
+      expect(await listIds({ country: 'USA', minRank: 1, maxRank: 10, minAge: 35 })).toStrictEqual([
+        102,
+      ]);
+    });
+
+    it('conserve le tri par rang croissant après filtrage', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/players')
+        .query({ minAge: 30 })
+        .expect(HttpStatus.OK);
+
+      const ranks = response.body.map((player: { data: { rank: number } }) => player.data.rank);
+
+      expect(ranks).toStrictEqual([1, 2, 10, 21, 52]);
+    });
+
+    it('retourne 200 avec un tableau vide lorsqu’aucun joueur ne correspond', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/players')
+        .query({ country: 'ZZZ' })
+        .expect(HttpStatus.OK);
+
+      expect(response.body).toStrictEqual([]);
+      expect(await listIds({ country: 'ESP', minAge: 40 })).toStrictEqual([]);
+      expect(await listIds({ minRank: 100 })).toStrictEqual([]);
+    });
+
+    it.each(['abc', '1.5', '-1', '0', ''])('rejette minRank=%s avec 400', async (invalidRank) => {
+      await expectBadRequest({ minRank: invalidRank });
+    });
+
+    it.each(['abc', '30.5', '-5', ''])('rejette maxAge=%s avec 400', async (invalidAge) => {
+      await expectBadRequest({ maxAge: invalidAge });
+    });
+
+    it.each(['SR', 'SUISSE', 'S1A', ''])('rejette country=%s avec 400', async (invalidCountry) => {
+      await expectBadRequest({ country: invalidCountry });
+    });
+
+    it('rejette un paramètre inconnu avec 400', async () => {
+      await expectBadRequest({ unknownFilter: 'valeur' });
+    });
+
+    it('rejette un intervalle de rang inversé avec 400', async () => {
+      const message = await expectBadRequest({ minRank: 10, maxRank: 1 });
+
+      expect(message).toContain('minRank doit être inférieur ou égal à maxRank.');
+    });
+
+    it('rejette un intervalle d’âge inversé avec 400', async () => {
+      const message = await expectBadRequest({ minAge: 40, maxAge: 30 });
+
+      expect(message).toContain('minAge doit être inférieur ou égal à maxAge.');
+    });
+
+    it('accepte un intervalle réduit à une seule valeur', async () => {
+      expect(await listIds({ minRank: 21, maxRank: 21 })).toStrictEqual([65]);
+    });
+
+    it('n’impose aucune borne maximale arbitraire', async () => {
+      expect(await listIds({ minRank: 100000 })).toStrictEqual([]);
+      expect(await listIds({ maxRank: 100000, maxAge: 100 })).toStrictEqual([17, 52, 102, 65, 95]);
+    });
+
+    it('reste compatible avec les autres endpoints', async () => {
+      await request(app.getHttpServer()).get('/players/52').expect(HttpStatus.OK);
+      await request(app.getHttpServer()).get('/players/52/statistics').expect(HttpStatus.OK);
+      await request(app.getHttpServer()).get('/statistics').expect(HttpStatus.OK);
+      await request(app.getHttpServer()).get('/health').expect(HttpStatus.OK);
     });
   });
 
@@ -292,7 +470,7 @@ describe('Tenisu API (e2e)', () => {
 
     it('POST /players renvoie 400 lorsque data.last contient une valeur interdite', async () => {
       const payload = buildValidPlayerPayload();
-      const data = payload.data as Record<string, unknown>;
+      const { data } = payload;
 
       const response = await request(app.getHttpServer())
         .post('/players')

@@ -8,13 +8,24 @@ import {
   ApiParam,
   ApiTags,
 } from '@nestjs/swagger';
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Query,
+  Res,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import { AddPlayerUseCase } from '../../application/use-cases/add-player.use-case.js';
 import { GetPlayerByIdUseCase } from '../../application/use-cases/get-player-by-id.use-case.js';
 import { GetPlayerStatisticsUseCase } from '../../application/use-cases/get-player-statistics.use-case.js';
 import { ListPlayersUseCase } from '../../application/use-cases/list-players.use-case.js';
 import { CreatePlayerDto } from '../dto/create-player.dto.js';
+import { ListPlayersQueryDto } from '../dto/list-players-query.dto.js';
 import { PlayerIdParamDto } from '../dto/player-id-param.dto.js';
 import { PlayerResponseDto } from '../dto/player-response.dto.js';
 import { PlayerStatisticsResponseDto } from '../dto/player-statistics-response.dto.js';
@@ -31,13 +42,24 @@ export class PlayersController {
 
   @Get()
   @ApiOperation({
-    summary: 'Lister les joueurs',
+    summary: 'Lister ou rechercher des joueurs',
     description:
-      'Joueurs triés par rang croissant, puis par identifiant croissant en cas de rang identique.',
+      'Joueurs triés par rang croissant, puis par identifiant croissant en cas de rang identique. ' +
+      'Les filtres sont facultatifs et cumulables (logique ET) : `country` (insensible à la casse), ' +
+      '`minRank`/`maxRank` et `minAge`/`maxAge`, bornes incluses. ' +
+      'Une recherche sans résultat renvoie `200` avec un tableau vide. ' +
+      'Exemple : `GET /players?country=USA&minRank=1&maxRank=10`.',
   })
-  @ApiOkResponse({ description: 'Liste des joueurs.', type: [PlayerResponseDto] })
-  findAll(): Promise<PlayerResponseDto[]> {
-    return this.listPlayersUseCase.execute();
+  @ApiOkResponse({
+    description: 'Liste des joueurs correspondant aux filtres (vide si aucun résultat).',
+    type: [PlayerResponseDto],
+  })
+  @ApiBadRequestResponse({
+    description:
+      'Paramètre de requête invalide, inconnu, ou intervalle incohérent (`minRank` > `maxRank`, `minAge` > `maxAge`).',
+  })
+  findAll(@Query() query: ListPlayersQueryDto): Promise<PlayerResponseDto[]> {
+    return this.listPlayersUseCase.execute(query);
   }
 
   @Get(':id')
