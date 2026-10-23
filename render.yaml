@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: tenisu-api
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start:prod
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: '24'
