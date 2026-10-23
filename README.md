@@ -64,7 +64,7 @@ src/
         │   ├── repositories/               # Contrat du repository + token d'injection
         │   └── errors/                     # Erreurs métier indépendantes de NestJS
         ├── application/
-        │   ├── use-cases/                  # Lister, détailler, statistiques d'un joueur, statistiques globales, ajouter
+        │   ├── use-cases/                  # Rechercher, lister, détailler, statistiques, ajouter
         │   └── services/                   # Calculs métier (IMC, médiane, ratios de victoires)
         ├── infrastructure/
         │   └── persistence/
@@ -162,6 +162,52 @@ curl http://localhost:3000/players
     "data": { "rank": 1, "points": 1982, "weight": 85000, "height": 185, "age": 33, "last": [1, 0, 0, 0, 1] }
   }
 ]
+```
+
+#### Recherche et filtres
+
+Cinq paramètres de requête facultatifs et cumulables (logique **ET**) filtrent la liste :
+
+| Paramètre | Type | Règle |
+| --- | --- | --- |
+| `country` | chaîne | Code pays sur trois lettres, comparé **sans tenir compte de la casse** (normalisé en majuscules). |
+| `minRank` | entier ≥ 1 | Rang minimum accepté, **borne incluse**. |
+| `maxRank` | entier ≥ 1 | Rang maximum accepté, **borne incluse**. |
+| `minAge` | entier ≥ 1 | Âge minimum accepté, **borne incluse**. |
+| `maxAge` | entier ≥ 1 | Âge maximum accepté, **borne incluse**. |
+
+```bash
+curl "http://localhost:3000/players?country=SRB"
+curl "http://localhost:3000/players?minRank=1&maxRank=10"
+curl "http://localhost:3000/players?minAge=30&maxAge=40"
+curl "http://localhost:3000/players?country=USA&minAge=35"
+curl "http://localhost:3000/players?country=SRB&minRank=1&maxRank=10"
+```
+
+Le tri par rang croissant (puis identifiant croissant) est conservé, y compris après filtrage. Une recherche sans résultat renvoie `200 OK` avec un tableau vide, jamais `404`.
+
+```bash
+# 200 OK
+curl "http://localhost:3000/players?country=ZZZ"
+```
+
+```json
+[]
+```
+
+- `400 Bad Request` : paramètre inconnu, valeur non entière, décimale, négative ou nulle, `country` qui n'est pas un code de trois lettres, ou intervalle inversé (`minRank > maxRank`, `minAge > maxAge`).
+
+```bash
+# 400 Bad Request : intervalle de rang inversé
+curl "http://localhost:3000/players?minRank=10&maxRank=1"
+```
+
+```json
+{
+  "statusCode": 400,
+  "error": "Bad Request",
+  "message": ["minRank doit être inférieur ou égal à maxRank."]
+}
 ```
 
 ### `GET /players/:id`
@@ -262,6 +308,13 @@ Utilisé comme health check par l'hébergeur.
 - `data.rank`, `data.points`, `data.weight`, `data.height`, `data.age` : entiers positifs ;
 - `data.last` : tableau non vide composé uniquement de `0` et `1` ;
 - `id`, lorsqu'il est fourni : entier positif.
+
+Paramètres de requête de `GET /players` :
+
+- `country` : chaîne non vide de trois lettres (insensible à la casse, normalisée en majuscules) ;
+- `minRank`, `maxRank`, `minAge`, `maxAge` : entiers positifs, convertis en nombres puis validés ; aucune borne maximale arbitraire n'est imposée ;
+- `minRank ≤ maxRank` et `minAge ≤ maxAge` (contraintes croisées vérifiées dans le DTO) ;
+- tout paramètre de requête inconnu est rejeté avec `400`, comme pour le corps du `POST`.
 
 ---
 
@@ -372,10 +425,10 @@ L'instance publique est disponible sur https://tenisu-api-64j3.onrender.com. Le 
 ## Tests
 
 ```bash
-npm test         # 39 tests unitaires (calculs, cas d'usage, repository)
-npm run test:e2e # 25 tests d'intégration HTTP
+npm test         # 54 tests unitaires (calculs, cas d'usage, repository)
+npm run test:e2e # 56 tests d'intégration HTTP
 ```
 
-Scénarios couverts : tri par rang puis par identifiant, détail d'un joueur, statistiques individuelles (victoires, défaites, ratio), `404` et `400` sur identifiant, agrégation des matchs par pays, ratio sur totaux agrégés, conversions d'unités de l'IMC, moyenne des IMC, médiane pour un nombre impair et pair de tailles, égalités de ratio, création valide, génération d'identifiant, `409` sur doublon, rejets de corps invalides et de champs inconnus, health check.
+Scénarios couverts : tri par rang puis par identifiant, recherche par pays (insensible à la casse), par intervalle de rang et d'âge (bornes incluses), combinaison de critères, résultat vide en `200`, rejets `400` des paramètres de recherche (type, signe, intervalle inversé, paramètre inconnu), détail d'un joueur, statistiques individuelles (victoires, défaites, ratio), `404` et `400` sur identifiant, agrégation des matchs par pays, ratio sur totaux agrégés, conversions d'unités de l'IMC, moyenne des IMC, médiane pour un nombre impair et pair de tailles, égalités de ratio, création valide, génération d'identifiant, `409` sur doublon, rejets de corps invalides et de champs inconnus, health check.
 
 Les tests sont déterministes et indépendants : chaque test construit un repository neuf (avec le dataset réel ou des données de test), sans partage d'état.
