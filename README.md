@@ -143,7 +143,7 @@ Base locale : `http://localhost:3000`. Documentation interactive : `GET /docs` (
 
 ### `GET /players`
 
-Retourne la liste complète des joueurs, triée par `data.rank` croissant puis par `id` croissant en cas de rang identique.
+Retourne la liste complète des joueurs, triée par défaut par `data.rank` croissant puis par `id` croissant en cas de rang identique.
 
 ```bash
 curl http://localhost:3000/players
@@ -184,7 +184,7 @@ curl "http://localhost:3000/players?country=USA&minAge=35"
 curl "http://localhost:3000/players?country=SRB&minRank=1&maxRank=10"
 ```
 
-Le tri par rang croissant (puis identifiant croissant) est conservé, y compris après filtrage. Une recherche sans résultat renvoie `200 OK` avec un tableau vide, jamais `404`.
+Le tri est appliqué après le filtrage et reste configurable (voir la section *Tri configurable* ci-dessous). Une recherche sans résultat renvoie `200 OK` avec un tableau vide, jamais `404`.
 
 ```bash
 # 200 OK
@@ -207,6 +207,49 @@ curl "http://localhost:3000/players?minRank=10&maxRank=1"
   "statusCode": 400,
   "error": "Bad Request",
   "message": ["minRank doit être inférieur ou égal à maxRank."]
+}
+```
+
+#### Tri configurable
+
+Deux paramètres de requête facultatifs, cumulables avec les filtres ci-dessus, contrôlent le tri. Celui-ci s'applique **après** le filtrage.
+
+| Paramètre | Type | Valeurs autorisées | Défaut |
+| --- | --- | --- | --- |
+| `sortBy` | chaîne | `rank`, `points`, `age`, `height` | `rank` |
+| `order` | chaîne | `asc`, `desc` | `asc` |
+
+- `sortBy` seul → tri croissant (`asc`) ;
+- `order` seul → tri par `rank` dans le sens demandé ;
+- aucun des deux → comportement par défaut : `rank` croissant.
+
+En cas d'égalité sur le champ trié, l'ordre reste **déterministe** : `rank` croissant puis `id` croissant ; lorsque le champ trié est déjà `rank`, seul `id` croissant départage. Le tableau source n'est jamais réordonné : chaque requête recalcule son propre tri.
+
+```bash
+curl "http://localhost:3000/players?sortBy=points&order=desc"
+curl "http://localhost:3000/players?sortBy=age&order=asc"
+curl "http://localhost:3000/players?country=SRB&minRank=1&maxRank=10&sortBy=points&order=desc"
+```
+
+```json
+[
+  { "id": 102, "lastname": "Williams", "data": { "rank": 10, "points": 3521 } },
+  { "id": 52, "lastname": "Djokovic", "data": { "rank": 2, "points": 2542 } }
+]
+```
+
+- `400 Bad Request` : `sortBy` hors liste blanche ou `order` différent de `asc`/`desc`.
+
+```bash
+# 400 Bad Request : champ de tri inconnu
+curl "http://localhost:3000/players?sortBy=score"
+```
+
+```json
+{
+  "statusCode": 400,
+  "error": "Bad Request",
+  "message": ["sortBy doit valoir rank, points, age, height."]
 }
 ```
 
@@ -314,6 +357,8 @@ Paramètres de requête de `GET /players` :
 - `country` : chaîne non vide de trois lettres (insensible à la casse, normalisée en majuscules) ;
 - `minRank`, `maxRank`, `minAge`, `maxAge` : entiers positifs, convertis en nombres puis validés ; aucune borne maximale arbitraire n'est imposée ;
 - `minRank ≤ maxRank` et `minAge ≤ maxAge` (contraintes croisées vérifiées dans le DTO) ;
+- `sortBy` : liste blanche stricte `rank`, `points`, `age`, `height` ;
+- `order` : uniquement `asc` ou `desc` ;
 - tout paramètre de requête inconnu est rejeté avec `400`, comme pour le corps du `POST`.
 
 ---
@@ -425,10 +470,10 @@ L'instance publique est disponible sur https://tenisu-api-64j3.onrender.com. Le 
 ## Tests
 
 ```bash
-npm test         # 54 tests unitaires (calculs, cas d'usage, repository)
-npm run test:e2e # 56 tests d'intégration HTTP
+npm test         # 65 tests unitaires (calculs, cas d'usage, repository)
+npm run test:e2e # 80 tests d'intégration HTTP
 ```
 
-Scénarios couverts : tri par rang puis par identifiant, recherche par pays (insensible à la casse), par intervalle de rang et d'âge (bornes incluses), combinaison de critères, résultat vide en `200`, rejets `400` des paramètres de recherche (type, signe, intervalle inversé, paramètre inconnu), détail d'un joueur, statistiques individuelles (victoires, défaites, ratio), `404` et `400` sur identifiant, agrégation des matchs par pays, ratio sur totaux agrégés, conversions d'unités de l'IMC, moyenne des IMC, médiane pour un nombre impair et pair de tailles, égalités de ratio, création valide, génération d'identifiant, `409` sur doublon, rejets de corps invalides et de champs inconnus, health check.
+Scénarios couverts : tri par rang puis par identifiant, **tri configurable** (`sortBy`/`order` croissant et décroissant pour `rank`, `points`, `age`, `height`, défauts, égalités départagées par rang puis identifiant, combinaison avec les filtres, rejets `400`), recherche par pays (insensible à la casse), par intervalle de rang et d'âge (bornes incluses), combinaison de critères, résultat vide en `200`, rejets `400` des paramètres de recherche (type, signe, intervalle inversé, paramètre inconnu), détail d'un joueur, statistiques individuelles (victoires, défaites, ratio), `404` et `400` sur identifiant, agrégation des matchs par pays, ratio sur totaux agrégés, conversions d'unités de l'IMC, moyenne des IMC, médiane pour un nombre impair et pair de tailles, égalités de ratio, création valide, génération d'identifiant, `409` sur doublon, rejets de corps invalides et de champs inconnus, health check.
 
 Les tests sont déterministes et indépendants : chaque test construit un repository neuf (avec le dataset réel ou des données de test), sans partage d'état.
