@@ -4,6 +4,12 @@ API REST permettant de consulter des joueurs de tennis, d'obtenir leurs statisti
 
 Backend exclusivement : aucune interface utilisateur. Le projet est développé avec NestJS, TypeScript strict et une architecture en quatre couches (domaine, application, infrastructure, présentation).
 
+- **Dépôt GitHub** : https://github.com/ahmedbaklouti/tenisu
+- **API déployée (Render)** : https://tenisu-api-64j3.onrender.com
+- **Documentation OpenAPI** : https://tenisu-api-64j3.onrender.com/docs
+
+> Le service Render est sur le plan gratuit : il se met en veille après une période d'inactivité et le premier appel suivant le réveil peut prendre plusieurs secondes.
+
 ---
 
 ## 1. Objectif du projet
@@ -323,9 +329,9 @@ Créer le service :
 2. Dans Render : **New → Web Service**, puis connecter le dépôt.
 3. Render détecte `render.yaml` (**Blueprint**) ou reprendre manuellement les commandes ci-dessus.
 4. Vérifier que la variable `PORT` est bien fournie par Render (le serveur écoute sur `process.env.PORT`, avec `3000` comme repli local, et sur `0.0.0.0`).
-5. Après déploiement, contrôler `GET https://<service>.onrender.com/health` (doit renvoyer `{ "status": "ok" }`) puis `GET /statistics` et `GET /docs`.
+5. Après déploiement, contrôler `GET https://tenisu-api-64j3.onrender.com/health` (doit renvoyer `{ "status": "ok" }`) puis `GET /statistics` et `GET /docs`.
 
-L'application n'a **pas** été déployée dans le cadre de ce rendu : seules la configuration et les vérifications locales ont été réalisées.
+L'instance publique est disponible sur https://tenisu-api-64j3.onrender.com. Le plan gratuit met le service en veille après une période d'inactivité : le premier appel suivant le réveil peut prendre plusieurs secondes. Comme le stockage est en mémoire, les joueurs créés via `POST /players` sont perdus à chaque redémarrage ou remise en veille.
 
 ---
 
