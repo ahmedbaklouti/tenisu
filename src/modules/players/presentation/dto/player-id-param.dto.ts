@@ -6,7 +6,7 @@ import { IsInt, Min } from 'class-validator';
 export class PlayerIdParamDto {
   @ApiProperty({ description: 'Identifiant du joueur (entier positif).', example: 52 })
   @Type(() => Number)
-  @IsInt({ message: "L'identifiant doit être un entier positif." })
-  @Min(1, { message: "L'identifiant doit être un entier positif." })
+  @IsInt({ message: "L'identifiant doit être un entier." })
+  @Min(1, { message: "L'identifiant doit être supérieur ou égal à 1." })
   id!: number;
 }

@@ -22,6 +22,21 @@ function buildValidPlayerPayload(): Record<string, unknown> {
 }
 
 /**
+ * Normalise le champ `message` d'une réponse d'erreur NestJS (chaîne unique ou
+ * tableau de messages) en une chaîne unique, afin de pouvoir vérifier les
+ * libellés exacts sans dépendre de la forme retournée.
+ */
+function normalizeMessage(body: { message?: unknown }): string {
+  const { message } = body;
+
+  if (Array.isArray(message)) {
+    return message.join(' | ');
+  }
+
+  return typeof message === 'string' ? message : '';
+}
+
+/**
  * Crée une application NestJS complète (mêmes pipes globaux et même
  * documentation qu'en production) adossée à un repository en mémoire neuf.
  */
@@ -89,14 +104,20 @@ describe('Tenisu API (e2e)', () => {
       expect(response.body.message).toContain('9999');
     });
 
-    it.each(['abc', '0', '-1', '1.5'])(
-      'GET /players/%s renvoie 400 pour un identifiant invalide',
-      async (invalidId) => {
+    it.each([
+      ['abc', "L'identifiant doit être un entier."],
+      ['0', "L'identifiant doit être supérieur ou égal à 1."],
+      ['-1', "L'identifiant doit être supérieur ou égal à 1."],
+      ['1.5', "L'identifiant doit être un entier."],
+    ])(
+      'GET /players/%s renvoie 400 avec le libellé attendu',
+      async (invalidId, expectedMessage) => {
         const response = await request(app.getHttpServer())
           .get(`/players/${invalidId}`)
           .expect(HttpStatus.BAD_REQUEST);
 
         expect(response.body).toMatchObject({ statusCode: HttpStatus.BAD_REQUEST });
+        expect(normalizeMessage(response.body)).toContain(expectedMessage);
       },
     );
 
@@ -197,7 +218,10 @@ describe('Tenisu API (e2e)', () => {
         .expect(HttpStatus.BAD_REQUEST);
 
       expect(response.body).toMatchObject({ statusCode: HttpStatus.BAD_REQUEST });
-      expect(response.body.message.length).toBeGreaterThan(0);
+
+      const message = normalizeMessage(response.body);
+      expect(message).toContain('sex doit valoir M ou F.');
+      expect(message).toContain('firstname should not be empty');
     });
 
     it('POST /players renvoie 400 lorsqu’un champ inconnu est fourni', async () => {
@@ -207,16 +231,21 @@ describe('Tenisu API (e2e)', () => {
         .expect(HttpStatus.BAD_REQUEST);
 
       expect(response.body).toMatchObject({ statusCode: HttpStatus.BAD_REQUEST });
+      expect(normalizeMessage(response.body)).toContain('property unknownField should not exist');
     });
 
     it('POST /players renvoie 400 lorsque data.last contient une valeur interdite', async () => {
       const payload = buildValidPlayerPayload();
       const data = payload.data as Record<string, unknown>;
 
-      await request(app.getHttpServer())
+      const response = await request(app.getHttpServer())
         .post('/players')
         .send({ ...payload, data: { ...data, last: [1, 2, 0] } })
         .expect(HttpStatus.BAD_REQUEST);
+
+      expect(normalizeMessage(response.body)).toContain(
+        'last ne doit contenir que des 0 et des 1.',
+      );
     });
 
     it('POST /players renvoie 400 pour un code pays invalide', async () => {
@@ -229,6 +258,9 @@ describe('Tenisu API (e2e)', () => {
         .expect(HttpStatus.BAD_REQUEST);
 
       expect(response.body).toMatchObject({ statusCode: HttpStatus.BAD_REQUEST });
+      expect(normalizeMessage(response.body)).toContain(
+        'code doit contenir trois lettres majuscules.',
+      );
     });
   });
 });

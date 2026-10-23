@@ -25,7 +25,7 @@ export class PlayerCountryDto {
   picture!: string;
 
   @ApiProperty({ description: 'Code pays sur trois lettres majuscules.', example: 'SRB' })
-  @Matches(/^[A-Z]{3}$/, { message: 'country.code doit contenir trois lettres majuscules.' })
+  @Matches(/^[A-Z]{3}$/, { message: 'code doit contenir trois lettres majuscules.' })
   code!: string;
 }
 
@@ -63,7 +63,7 @@ export class PlayerDataDto {
   })
   @IsArray()
   @ArrayNotEmpty()
-  @IsIn([0, 1], { each: true, message: 'data.last ne doit contenir que des 0 et des 1.' })
+  @IsIn([0, 1], { each: true, message: 'last ne doit contenir que des 0 et des 1.' })
   last!: number[];
 }
 
