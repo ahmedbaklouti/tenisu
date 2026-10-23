@@ -64,8 +64,8 @@ src/
         │   ├── repositories/               # Contrat du repository + token d'injection
         │   └── errors/                     # Erreurs métier indépendantes de NestJS
         ├── application/
-        │   ├── use-cases/                  # Lister, détailler, statistiques, ajouter
-        │   └── services/                   # Calculs métier (IMC, médiane, ratio par pays)
+        │   ├── use-cases/                  # Lister, détailler, statistiques d'un joueur, statistiques globales, ajouter
+        │   └── services/                   # Calculs métier (IMC, médiane, ratios de victoires)
         ├── infrastructure/
         │   └── persistence/
         │       ├── data/headtohead.json    # Dataset initial
@@ -175,6 +175,32 @@ curl http://localhost:3000/players/52
 - `400 Bad Request` : identifiant non entier ou non positif.
 - `404 Not Found` : identifiant valide mais inexistant.
 
+### `GET /players/:id/statistics`
+
+Retourne les statistiques individuelles d'un joueur, calculées sur ses derniers matchs (`data.last`).
+
+```bash
+curl http://localhost:3000/players/95/statistics
+```
+
+```json
+{
+  "playerId": 95,
+  "wins": 2,
+  "losses": 3,
+  "matchesPlayed": 5,
+  "winRatio": 0.4
+}
+```
+
+- `wins` : nombre de `1` dans `data.last` ;
+- `losses` : `matchesPlayed - wins` ;
+- `matchesPlayed` : longueur de `data.last` ;
+- `winRatio` : `wins / matchesPlayed`, exprimé **entre 0 et 1** (jamais en pourcentage), soit `0` lorsqu'aucun match n'est enregistré.
+
+- `400 Bad Request` : identifiant non entier ou non positif.
+- `404 Not Found` : identifiant valide mais inexistant.
+
 ### `GET /statistics`
 
 Retourne le pays au meilleur ratio de victoires, l'IMC moyen et la médiane des tailles.
@@ -240,6 +266,14 @@ Utilisé comme health check par l'hébergeur.
 ---
 
 ## 9. Règles de calcul des statistiques
+
+### Ratio de victoires d'un joueur
+
+1. Compter les victoires (`1` dans `data.last`).
+2. Compter les matchs (longueur de `data.last`) ; les défaites en découlent.
+3. Calculer `winRatio = wins / matchesPlayed`, soit `0` si aucun match n'est enregistré.
+
+**Convention commune à toute l'API** : un ratio de victoires est toujours exprimé **entre 0 et 1**, jamais en pourcentage. C'est vrai pour `GET /players/:id/statistics` (`winRatio`) comme pour `GET /statistics` (`countryWithHighestWinRatio.ratio`).
 
 ### Ratio de victoires par pays
 
@@ -338,10 +372,10 @@ L'instance publique est disponible sur https://tenisu-api-64j3.onrender.com. Le 
 ## Tests
 
 ```bash
-npm test         # 33 tests unitaires (calculs, cas d'usage, repository)
-npm run test:e2e # 18 tests d'intégration HTTP
+npm test         # 39 tests unitaires (calculs, cas d'usage, repository)
+npm run test:e2e # 25 tests d'intégration HTTP
 ```
 
-Scénarios couverts : tri par rang puis par identifiant, détail d'un joueur, `404` et `400` sur identifiant, agrégation des matchs par pays, ratio sur totaux agrégés, conversions d'unités de l'IMC, moyenne des IMC, médiane pour un nombre impair et pair de tailles, égalités de ratio, création valide, génération d'identifiant, `409` sur doublon, rejets de corps invalides et de champs inconnus, health check.
+Scénarios couverts : tri par rang puis par identifiant, détail d'un joueur, statistiques individuelles (victoires, défaites, ratio), `404` et `400` sur identifiant, agrégation des matchs par pays, ratio sur totaux agrégés, conversions d'unités de l'IMC, moyenne des IMC, médiane pour un nombre impair et pair de tailles, égalités de ratio, création valide, génération d'identifiant, `409` sur doublon, rejets de corps invalides et de champs inconnus, health check.
 
 Les tests sont déterministes et indépendants : chaque test construit un repository neuf (avec le dataset réel ou des données de test), sans partage d'état.
