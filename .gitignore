@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+*.log
+.env
+.env.local
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Énoncé du test technique : ne jamais committer.
+PROMPT_IMPLEMENTATION.md
