@@ -4,6 +4,11 @@ services:
     runtime: node
     plan: free
     region: frankfurt
+    # Branche suivie par le service (défaut Render : master).
+    branch: main
+    # Ne déploie qu'une fois les checks CI (workflow .github/workflows/ci.yml) verts
+    # sur cette branche. Valeurs possibles : commit | checksPass | off.
+    autoDeployTrigger: checksPass
     buildCommand: npm ci && npm run build
     startCommand: npm run start:prod
     healthCheckPath: /health

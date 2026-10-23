@@ -314,6 +314,8 @@ Le fichier [`render.yaml`](./render.yaml) décrit un service web minimal :
 - **Build command** : `npm ci && npm run build`
 - **Start command** : `npm run start:prod`
 - **Health check** : `/health`
+- **Branche** : `main` (Render utilise `master` par défaut)
+- **Déploiement automatique** : `autoDeployTrigger: checksPass`, c'est-à-dire un déploiement uniquement si les checks du workflow GitHub Actions passent sur `main`
 
 Créer le service :
 
