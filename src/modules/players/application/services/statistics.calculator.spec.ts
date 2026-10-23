@@ -4,6 +4,7 @@ import {
   computeBmi,
   computeCountryWinRatios,
   computeMedianHeightCm,
+  computePlayerWinStats,
   pickCountryWithHighestWinRatio,
 } from './statistics.calculator.js';
 
@@ -86,6 +87,52 @@ describe('computeMedianHeightCm', () => {
 
   it('retourne 0 lorsqu’il n’y a aucun joueur', () => {
     expect(computeMedianHeightCm([])).toBe(0);
+  });
+});
+
+describe('computePlayerWinStats', () => {
+  it('compte les victoires, les défaites et le ratio de victoires', () => {
+    const player = buildPlayer({ data: { last: [1, 1, 0, 1, 0] } });
+
+    expect(computePlayerWinStats(player)).toEqual({
+      wins: 3,
+      losses: 2,
+      matchesPlayed: 5,
+      winRatio: 0.6,
+    });
+  });
+
+  it('retourne un ratio de 1 pour un joueur invaincu', () => {
+    const player = buildPlayer({ id: 52, data: { last: [1, 1, 1, 1, 1] } });
+
+    expect(computePlayerWinStats(player)).toEqual({
+      wins: 5,
+      losses: 0,
+      matchesPlayed: 5,
+      winRatio: 1,
+    });
+  });
+
+  it('retourne 0 sans arrondi pour un joueur qui a tout perdu', () => {
+    const player = buildPlayer({ data: { last: [0, 0, 0] } });
+
+    expect(computePlayerWinStats(player)).toEqual({
+      wins: 0,
+      losses: 3,
+      matchesPlayed: 3,
+      winRatio: 0,
+    });
+  });
+
+  it('retourne un ratio nul sans match enregistré', () => {
+    const player = buildPlayer({ data: { last: [] } });
+
+    expect(computePlayerWinStats(player)).toEqual({
+      wins: 0,
+      losses: 0,
+      matchesPlayed: 0,
+      winRatio: 0,
+    });
   });
 });
 

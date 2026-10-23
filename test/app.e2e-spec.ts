@@ -121,6 +121,56 @@ describe('Tenisu API (e2e)', () => {
       },
     );
 
+    it('GET /players/:id/statistics renvoie le bilan du joueur sur ses derniers matchs', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/players/95/statistics')
+        .expect(HttpStatus.OK);
+
+      // `last: [0, 1, 0, 0, 1]` → 2 victoires sur 5 matchs, ratio entre 0 et 1.
+      expect(response.body).toStrictEqual({
+        playerId: 95,
+        wins: 2,
+        losses: 3,
+        matchesPlayed: 5,
+        winRatio: 0.4,
+      });
+    });
+
+    it('GET /players/:id/statistics retourne un ratio de 1 pour un joueur invaincu', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/players/52/statistics')
+        .expect(HttpStatus.OK);
+
+      expect(response.body).toStrictEqual({
+        playerId: 52,
+        wins: 5,
+        losses: 0,
+        matchesPlayed: 5,
+        winRatio: 1,
+      });
+    });
+
+    it('GET /players/:id/statistics renvoie 404 pour un identifiant valide inexistant', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/players/9999/statistics')
+        .expect(HttpStatus.NOT_FOUND);
+
+      expect(response.body).toMatchObject({
+        statusCode: HttpStatus.NOT_FOUND,
+        error: 'Not Found',
+      });
+      expect(response.body.message).toContain('9999');
+    });
+
+    it.each(['abc', '0', '-1', '1.5'])(
+      'GET /players/%s/statistics renvoie 400 pour un identifiant invalide',
+      async (invalidId) => {
+        await request(app.getHttpServer())
+          .get(`/players/${invalidId}/statistics`)
+          .expect(HttpStatus.BAD_REQUEST);
+      },
+    );
+
     it('GET /statistics renvoie les valeurs de référence du dataset', async () => {
       const response = await request(app.getHttpServer()).get('/statistics').expect(HttpStatus.OK);
 
@@ -135,7 +185,13 @@ describe('Tenisu API (e2e)', () => {
       const response = await request(app.getHttpServer()).get('/docs-json').expect(HttpStatus.OK);
 
       expect(Object.keys(response.body.paths)).toStrictEqual(
-        expect.arrayContaining(['/players', '/players/{id}', '/statistics', '/health']),
+        expect.arrayContaining([
+          '/players',
+          '/players/{id}',
+          '/players/{id}/statistics',
+          '/statistics',
+          '/health',
+        ]),
       );
     });
   });

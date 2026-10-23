@@ -9,6 +9,28 @@ export interface CountryWinRatio {
   ratio: number;
 }
 
+/** Bilan de matchs d'un joueur, calculé sur ses derniers matchs. */
+export interface PlayerWinStats {
+  wins: number;
+  losses: number;
+  matchesPlayed: number;
+  /** Ratio entre 0 et 1 (jamais en pourcentage). */
+  winRatio: number;
+}
+
+/** Bilan de victoires d'un joueur sur les matchs enregistrés dans `data.last`. */
+export function computePlayerWinStats(player: Player): PlayerWinStats {
+  const wins = player.data.last.filter((result) => result === 1).length;
+  const matchesPlayed = player.data.last.length;
+
+  return {
+    wins,
+    losses: matchesPlayed - wins,
+    matchesPlayed,
+    winRatio: matchesPlayed === 0 ? 0 : wins / matchesPlayed,
+  };
+}
+
 /** Indice de masse corporelle d'un joueur, en kg/m². */
 export function computeBmi(player: Player): number {
   const weightKg = player.data.weight / 1000;
@@ -58,9 +80,10 @@ export function computeCountryWinRatios(players: readonly Player[]): CountryWinR
 
   for (const player of players) {
     const totals = totalsByCountry.get(player.country.code) ?? { wins: 0, matches: 0 };
+    const playerStats = computePlayerWinStats(player);
 
-    totals.wins += player.data.last.filter((result) => result === 1).length;
-    totals.matches += player.data.last.length;
+    totals.wins += playerStats.wins;
+    totals.matches += playerStats.matchesPlayed;
     totalsByCountry.set(player.country.code, totals);
   }
 
